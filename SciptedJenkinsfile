@@ -1,0 +1,58 @@
+node {
+    def mvnHome = tool 'mvn-3-5-2'
+    def jdkHome = tool 'jdk11'
+    env.PATH = "${jdkHome}/bin:${mvnHome}/bin:${env.PATH}"
+    env.IMAGE_NAME = "abdomagdy/jenkins-app"
+
+    try {
+        stage('Checkout') {
+            git branch: 'main', url: 'https://github.com/eagledev-am/jenkins-task.git'
+        }
+
+        stage('Build') {
+            echo "Build Number: ${env.BUILD_NUMBER}"
+            sh "mvn clean package"
+        }
+
+        stage('Docker Build') {
+            sh "docker build -t ${env.IMAGE_NAME}:${env.BUILD_NUMBER} ."
+        }
+
+        stage('Docker Login') {
+            withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DOCKERHUB_PASS')]) {
+                sh '''
+                    echo "$DOCKERHUB_PASS" | docker login -u abdomagdy --password-stdin
+                    docker info | grep Username
+                '''
+            }
+        }
+
+        stage('Docker Push') {
+            sh """
+                docker push ${env.IMAGE_NAME}:${env.BUILD_NUMBER}
+                docker tag ${env.IMAGE_NAME}:${env.BUILD_NUMBER} ${env.IMAGE_NAME}:latest
+                docker push ${env.IMAGE_NAME}:latest
+            """
+        }
+
+        stage('Deploy') {
+            sh """
+                echo "Deploying container..."
+                docker stop jenkins-app || true
+                docker rm jenkins-app || true
+                docker run -d -p 9000:8080 --name jenkins-app ${env.IMAGE_NAME}:${env.BUILD_NUMBER}
+                echo "App is running on: http://<your-server-ip>:9000"
+            """
+        }
+
+        echo "Pipeline completed successfully"
+
+    } catch (err) {
+        echo "Pipeline failed: ${err}"
+        currentBuild.result = 'FAILURE'
+        throw err
+    } finally {
+        echo "Cleaning workspace..."
+        cleanWs()
+    }
+}
