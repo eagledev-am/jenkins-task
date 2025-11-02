@@ -1,0 +1,26 @@
+@Library('shared-lib') _
+node {
+    def mvnHome = tool 'mvn-3-5-2'
+    def jdkHome = tool 'jdk11'
+    env.PATH = "${jdkHome}/bin:${mvnHome}/bin:${env.PATH}"
+    env.IMAGE_NAME = "abdomagdy/jenkins-app"
+
+    try {
+        stage('Checkout') {
+            git branch: 'main', url: 'https://github.com/eagledev-am/jenkins-task.git'
+        }
+
+        buildApp()
+        dockerBuildAndPush(env.IMAGE_NAME)
+        deployApp(env.IMAGE_NAME)
+
+        echo "Pipeline completed successfully"
+    } catch (err) {
+        echo "Pipeline failed: ${err}"
+        currentBuild.result = 'FAILURE'
+        throw err
+    } finally {
+        echo "Cleaning workspace..."
+        cleanWs()
+    }
+}
